@@ -1,0 +1,1255 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ハンコチャット</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap">
+<style>
+/* Layout: one column. Home and admin scroll as pages; a room is a full-height chat with a fixed composer. Stamps (ハンコ) are the identity. */
+:root{
+  --bg:#eceff4; --surface:#ffffff; --surface-2:#e2e6ee; --ink:#1c2130; --muted:#5a647a; --line:#d3d8e3;
+  --accent:#e0261c; --on-accent:#ffffff; --accent-soft:#fde8e6; --accent-ink:#c61d14;
+  --good:#1b7f45; --bad:#c2271d; --notice:#e6ecf8;
+  --st-red:#e0261c; --st-blue:#2f5fd8; --st-green:#1b8f4e; --st-purple:#8b3fd0; --st-orange:#d97000; --st-ink:#3a4256;
+  --shadow:0 1px 2px rgba(20,30,50,.08),0 8px 24px rgba(20,30,50,.10);
+  --scrim:rgba(15,20,30,.55);
+  --font:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic Medium","Meiryo",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12151c; --surface:#1b1f29; --surface-2:#262b39; --ink:#e9ecf3; --muted:#9aa3b8; --line:#2c3242;
+    --accent:#ff5b4f; --on-accent:#2a0907; --accent-soft:#3b2022; --accent-ink:#ff8a80;
+    --good:#4cc784; --bad:#ff7a70; --notice:#222a3d;
+    --st-red:#ff5b4f; --st-blue:#7da2ff; --st-green:#4fd18b; --st-purple:#c493ff; --st-orange:#ffa94d; --st-ink:#b4bbd0;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+    --scrim:rgba(0,0,0,.65);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12151c; --surface:#1b1f29; --surface-2:#262b39; --ink:#e9ecf3; --muted:#9aa3b8; --line:#2c3242;
+  --accent:#ff5b4f; --on-accent:#2a0907; --accent-soft:#3b2022; --accent-ink:#ff8a80;
+  --good:#4cc784; --bad:#ff7a70; --notice:#222a3d;
+  --st-red:#ff5b4f; --st-blue:#7da2ff; --st-green:#4fd18b; --st-purple:#c493ff; --st-orange:#ffa94d; --st-ink:#b4bbd0;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+  --scrim:rgba(0,0,0,.65);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:var(--font);font-size:15px;line-height:1.6;background:var(--bg);color:var(--ink);-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#app{height:100%;display:flex;flex-direction:column;min-height:0}
+h1,h2,h3,p{margin:0}
+h1,h2,h3{text-wrap:balance}
+
+/* stamps */
+.stamp{display:block;flex:none}
+.stamp circle{fill:none;stroke:var(--c);stroke-width:6}
+.stamp text{fill:var(--c);font-family:var(--font);font-weight:700}
+.c-red{--c:var(--st-red)} .c-blue{--c:var(--st-blue)} .c-green{--c:var(--st-green)}
+.c-purple{--c:var(--st-purple)} .c-orange{--c:var(--st-orange)} .c-ink{--c:var(--st-ink)}
+
+/* top bar */
+.top{flex:none;display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--line);min-height:56px}
+.top .brand{font-size:16px}
+.top .grow{flex:1;min-width:0}
+.pill{font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.pill.on{background:var(--accent-soft);color:var(--accent-ink)}
+
+/* buttons and fields */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-weight:700;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn.danger.solid{background:var(--bad);color:var(--surface);border-color:var(--bad)}
+.btn.small{min-height:36px;padding:0 12px;font-size:14px}
+.btn:disabled{opacity:.5;cursor:default}
+.ibtn{flex:none;display:inline-grid;place-items:center;min-width:44px;height:44px;padding:0 10px;border-radius:22px;border:0;background:transparent;color:var(--muted);cursor:pointer;gap:2px;grid-auto-flow:column}
+.ibtn:hover{background:var(--surface-2)}
+.ibtn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ibtn.send{background:var(--accent);color:var(--on-accent)}
+.ibtn.send:disabled{opacity:.4;cursor:default}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field label,.label{font-size:14px;font-weight:700}
+.hint{font-size:13px;color:var(--muted)}
+input,select,textarea{width:100%;min-height:44px;padding:9px 12px;font-size:16px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+input[type=number]{font-variant-numeric:tabular-nums}
+.err{font-size:14px;color:var(--bad);font-weight:700;min-height:1.4em}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* pages */
+.page{flex:1;min-height:0;overflow-y:auto;padding-block:20px 32px;padding-inline:16px}
+.wrap{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:24px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.notice{background:var(--notice);border-radius:12px;padding:12px 14px;font-size:14px}
+.sec-title{font-size:17px}
+.wrap.tight{gap:12px}
+.grow-field{flex:1;min-width:160px}
+.hint.full{flex-basis:100%}
+.gate-title{font-size:24px;line-height:1.3;overflow-wrap:anywhere}
+
+/* home */
+.hero{display:flex;gap:16px;align-items:center}
+.hero h1{font-size:28px;line-height:1.25}
+.hero p{color:var(--muted);margin-top:4px}
+.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;counter-reset:s}
+.steps li{display:flex;gap:12px;align-items:flex-start;counter-increment:s}
+.steps li::before{content:counter(s);flex:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--accent);color:var(--accent-ink);font-weight:700;display:grid;place-items:center;font-size:14px}
+
+/* admin */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;display:flex;flex-direction:column}
+.stat .k{font-size:13px;color:var(--muted)}
+.stat .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.3}
+.stat .v small{font-size:14px;color:var(--muted);font-weight:500}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.switch{flex:none;position:relative;width:52px;height:30px;border-radius:999px;border:0;background:var(--line);cursor:pointer;padding:0}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--surface);box-shadow:var(--shadow);transition:transform .15s}
+.switch[aria-checked="true"]{background:var(--accent)}
+.switch[aria-checked="true"]::after{transform:translateX(22px)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.rooms{display:flex;flex-direction:column;gap:12px}
+.rcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+.rhead{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.rhead h3{font-size:17px;overflow-wrap:anywhere}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px 12px;margin:0}
+.facts div{display:flex;flex-direction:column;min-width:0}
+.facts dt{font-size:12px;color:var(--muted)}
+.facts dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums}
+.empty{color:var(--muted);text-align:center;padding:20px 8px}
+
+/* room */
+.room{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+.rtitle{min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.rtitle strong{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rtitle span{font-size:12px;color:var(--muted)}
+.msgs{flex:1;min-height:0;overflow-y:auto;padding-block:8px 16px;padding-inline:16px;display:flex;flex-direction:column}
+.day{align-self:center;font-size:12px;color:var(--muted);background:var(--surface-2);padding:2px 12px;border-radius:999px;margin-block:16px 4px}
+.msg{display:flex;gap:10px;align-items:flex-start;margin-top:12px}
+.msg.cont{margin-top:3px}
+.msg.me{flex-direction:row-reverse}
+.slot{flex:none;width:40px}
+.body{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:min(80%,34rem)}
+.msg.me .body{align-items:flex-end}
+.meta{display:flex;gap:8px;align-items:baseline;font-size:12px;color:var(--muted)}
+.meta .name{font-weight:700;color:var(--ink);font-size:13px;overflow-wrap:anywhere}
+.bubble{background:var(--surface);border:1px solid var(--line);border-radius:4px 16px 16px 16px;padding:8px 12px;white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
+.msg.me .bubble{background:var(--accent-soft);border-color:transparent;border-radius:16px 4px 16px 16px}
+.bubble.pic{padding:4px}
+.picbtn{display:block;padding:0;border:0;background:none;cursor:zoom-in;border-radius:12px;max-width:100%}
+.picbtn img{display:block;max-width:100%;max-height:300px;width:auto;height:auto;border-radius:12px}
+.rx{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.msg.me .rx{justify-content:flex-end}
+.chip{display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:14px;cursor:pointer}
+.chip .n{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.chip.add{color:var(--muted);padding:0 8px}
+.chip.add svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round}
+@media (hover:hover){
+  .chip.add{opacity:0}
+  .msg:hover .chip.add,.msg:focus-within .chip.add,.chip.add.open{opacity:1}
+}
+.picker{display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow)}
+.picker button{width:38px;height:38px;border-radius:50%;border:0;background:none;font-size:20px;cursor:pointer}
+.picker button:hover{background:var(--surface-2)}
+.newpill{position:absolute;left:50%;transform:translateX(-50%);bottom:84px;z-index:2;display:inline-flex;gap:6px;align-items:center;min-height:36px;padding:0 14px;border-radius:999px;border:0;background:var(--accent);color:var(--on-accent);font-weight:700;box-shadow:var(--shadow);cursor:pointer}
+.newpill svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.pending{flex:none;display:flex;align-items:center;gap:10px;padding:8px 16px;background:var(--surface);border-top:1px solid var(--line)}
+.pending img{width:56px;height:56px;object-fit:cover;border-radius:8px}
+.pending .grow{flex:1;min-width:0;font-size:13px;color:var(--muted)}
+.composer{flex:none;display:flex;align-items:flex-end;gap:6px;padding:8px 12px;background:var(--surface);border-top:1px solid var(--line)}
+.composer textarea{flex:1;min-width:0;resize:none;border-radius:22px;padding:10px 16px;line-height:1.5;max-height:140px;background:var(--bg);overflow-y:auto}
+
+/* join form */
+.gate{align-items:stretch}
+.preview{display:flex;gap:16px;align-items:center}
+.swatches{display:flex;gap:4px}
+.swatch{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;padding:6px 2px;border-radius:10px;border:2px solid transparent;background:none;cursor:pointer;font-size:13px}
+.swatch .dot{width:26px;height:26px;border-radius:50%;background:var(--c)}
+.swatch[aria-checked="true"]{border-color:var(--c)}
+
+/* overlays */
+.overlay{position:fixed;inset:0;z-index:20;background:var(--scrim);display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:560px;max-height:88%;overflow-y:auto;background:var(--surface);border-radius:18px 18px 0 0;padding:8px 16px calc(16px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px;outline:none}
+@media (min-width:600px){.overlay{align-items:center}.sheet{border-radius:18px}}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.menu{display:flex;flex-direction:column}
+.menu button{display:flex;flex-direction:column;align-items:flex-start;gap:0;text-align:left;min-height:52px;padding:8px 6px;border:0;border-bottom:1px solid var(--line);background:none;cursor:pointer;font-weight:700}
+.menu button small{font-weight:400;color:var(--muted);font-size:13px}
+.menu button:disabled{opacity:.5;cursor:default}
+.menu button.danger{color:var(--bad)}
+.menu button:last-child{border-bottom:0}
+.mlist{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.mlist li{display:flex;align-items:center;gap:12px}
+.lightbox{align-items:center;cursor:zoom-out}
+.lightbox img{max-width:96%;max-height:92%;border-radius:8px}
+.copybox{display:flex;flex-direction:column;gap:8px}
+
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:30;max-width:min(92%,420px);pointer-events:none}
+#toast div{background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;font-weight:700;box-shadow:var(--shadow);text-align:center}
+@media (prefers-reduced-motion:reduce){.switch::after{transition:none}}
+.loading,.loadfail{color:var(--muted);text-align:center;padding:40px 16px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+setTimeout(function(){
+  if(window.__hcReady) return;
+  var a=document.getElementById('app');
+  a.innerHTML='<div class="loadfail"><p>読み込めませんでした。</p><p>通信の状態を確認して、ページを再読み込みしてください。</p></div>';
+},8000);
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import { getAuth, signInAnonymously, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { getFirestore, doc, collection, query, where, orderBy, limit, onSnapshot, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, arrayUnion, arrayRemove, getCountFromServer, Timestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+window.__hcReady = true;
+
+/* ---------- Firebase ---------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyDOfTgzQvj_IGyfUtt3yZuMrbjNHHKoU6A",
+  authDomain: "hanko-chat.firebaseapp.com",
+  projectId: "hanko-chat",
+  storageBucket: "hanko-chat.firebasestorage.app",
+  messagingSenderId: "819449919407",
+  appId: "1:819449919407:web:48d1b9899c5299aa2e215a"
+};
+// 管理者のユーザーUID（Firestoreのルールにも同じものが入っています）
+const ADMIN_UID = "UwpxiDA7b7btkhfW8NyBWw4btzH2";
+
+// 入室する人用（匿名ログイン）と、管理者用（メール／パスワード）は、別々のログインとして持ちます
+const app = initializeApp(firebaseConfig);
+const adminApp = initializeApp(firebaseConfig, "admin");
+const auth = getAuth(app);
+const adminAuth = getAuth(adminApp);
+const db = getFirestore(app);
+const adminDb = getFirestore(adminApp);
+
+/* ---------- constants ---------- */
+const RETENTION_DAYS = 14;
+const DAY_MS = 86400000;
+const IMG_KB = 250;
+const BASE_TITLE = 'ハンコチャット';
+const EMOJIS = ['👍', '❤️', '😂', '🎉', '🙏', '👀'];
+const COLORS = [['red', '朱'], ['blue', '藍'], ['green', '緑'], ['purple', '紫'], ['orange', '橙'], ['ink', '墨']];
+
+/* ---------- small utils ---------- */
+const root = document.getElementById('app');
+function add(el, kids) {
+  for (let i = 0; i < kids.length; i++) {
+    const c = kids[i];
+    if (c == null || c === false) continue;
+    if (Array.isArray(c)) add(el, c);
+    else el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+}
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) {
+    for (const k in props) {
+      const v = props[k];
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k.slice(0, 2) === 'on') el.addEventListener(k.slice(2), v);
+      else if (k === 'value' || k === 'disabled' || k === 'checked') el[k] = v;
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+  }
+  add(el, kids);
+  return el;
+}
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+function fmtTime(ts) { const d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+function fmtDate(ts) { const d = new Date(ts); return (d.getMonth() + 1) + '/' + d.getDate(); }
+function dayKey(ts) { return new Date(ts).toDateString(); }
+function dayLabel(ts) {
+  const n = Date.now();
+  if (dayKey(ts) === dayKey(n)) return '今日';
+  if (dayKey(ts) === dayKey(n - DAY_MS)) return '昨日';
+  const d = new Date(ts);
+  return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+}
+function ago(ts) {
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1) return 'たった今';
+  if (m < 60) return m + '分前';
+  const hr = Math.floor(m / 60);
+  if (hr < 24) return hr + '時間前';
+  return Math.floor(hr / 24) + '日前';
+}
+function rid(n) {
+  n = n || 8;
+  const a = new Uint8Array(n);
+  crypto.getRandomValues(a);
+  return Array.prototype.map.call(a, function (b) { return (b % 36).toString(36); }).join('');
+}
+function clipChars(s, n) { return Array.from(s || '').slice(0, n).join(''); }
+function fmtSize(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+function tsMs(t) { return t && typeof t.toMillis === 'function' ? t.toMillis() : null; }
+
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+}
+// 合言葉の「証明」。合言葉がない部屋は空文字です
+async function proofFor(roomId, pass) {
+  const p = (pass || '').trim();
+  return p ? sha256Hex(roomId + ':' + p) : '';
+}
+
+function fbErr(e) {
+  const c = (e && e.code) || '';
+  const map = {
+    'permission-denied': '権限がありません。Firestoreのルールが貼られているか確認してください',
+    'unauthenticated': 'ログインできていません。ページを再読み込みしてください',
+    'unavailable': '通信できません。電波の状態を確認してください',
+    'auth/network-request-failed': '通信できません。電波の状態を確認してください',
+    'auth/invalid-credential': 'メールアドレスかパスワードが違います',
+    'auth/wrong-password': 'メールアドレスかパスワードが違います',
+    'auth/user-not-found': 'メールアドレスかパスワードが違います',
+    'auth/invalid-email': 'メールアドレスの形式が正しくありません',
+    'auth/too-many-requests': '試行が多すぎます。しばらく待ってからお試しください',
+    'auth/operation-not-allowed': 'この方法のログインが、Firebaseで有効になっていません',
+    'auth/unauthorized-domain': 'このURLのドメインが、Firebaseの承認済みドメインに入っていません',
+    'resource-exhausted': 'Firebaseの無料の上限に達しました。時間をおいてお試しください'
+  };
+  return map[c] || ('エラーが起きました' + (c ? '（' + c + '）' : ''));
+}
+
+/* ---------- icons and stamps ---------- */
+const SVGNS = 'http://www.w3.org/2000/svg';
+const ICONS = {
+  back: 'M15 18l-6-6 6-6',
+  dots: 'M5 12h.01M12 12h.01M19 12h.01',
+  users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+  image: 'M4 5h16v14H4zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM20 15l-5-5L5 19',
+  send: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z',
+  x: 'M18 6L6 18M6 6l12 12',
+  plus: 'M12 5v14M5 12h14',
+  down: 'M6 9l6 6 6-6'
+};
+function icon(name) {
+  const s = document.createElementNS(SVGNS, 'svg');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS(SVGNS, 'path');
+  p.setAttribute('d', ICONS[name]);
+  if (name === 'dots') p.setAttribute('stroke-width', '3.5');
+  s.appendChild(p);
+  return s;
+}
+function stampEl(text, color, size) {
+  const chars = Array.from(text || '').slice(0, 2);
+  const wide = chars.some(function (c) { return c.charCodeAt(0) > 0x2e7f; });
+  const fs = chars.length > 1 ? (wide ? 32 : 38) : (wide ? 52 : 58);
+  const svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('width', size || 40);
+  svg.setAttribute('height', size || 40);
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'stamp c-' + color);
+  const c = document.createElementNS(SVGNS, 'circle');
+  c.setAttribute('cx', '50'); c.setAttribute('cy', '50'); c.setAttribute('r', '45');
+  const t = document.createElementNS(SVGNS, 'text');
+  t.setAttribute('x', '50'); t.setAttribute('y', '52');
+  t.setAttribute('text-anchor', 'middle');
+  t.setAttribute('dominant-baseline', 'central');
+  t.setAttribute('font-size', fs);
+  t.textContent = chars.join('');
+  svg.appendChild(c); svg.appendChild(t);
+  return svg;
+}
+
+/* ---------- toast, sheets, clipboard ---------- */
+let toastTimer = null;
+function toast(msg) {
+  const box = document.getElementById('toast');
+  box.replaceChildren(h('div', { text: msg }));
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { box.replaceChildren(); }, 3600);
+}
+function openSheet(title, body, opts) {
+  opts = opts || {};
+  const ov = h('div', { class: 'overlay' });
+  const sh = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, tabindex: '-1' },
+    h('div', { class: 'sheet-head' }, h('strong', { text: title }),
+      h('button', { class: 'ibtn', 'aria-label': '閉じる', type: 'button', onclick: close }, icon('x'))),
+    body);
+  ov.append(sh);
+  ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  function close() { document.removeEventListener('keydown', onKey); ov.remove(); if (opts.onClose) opts.onClose(); }
+  document.addEventListener('keydown', onKey);
+  document.body.append(ov);
+  sh.focus();
+  return { close: close };
+}
+function openLightbox(src) {
+  const ov = h('div', { class: 'overlay lightbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': '画像' }, h('img', { src: src, alt: '拡大した画像' }));
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  function close() { document.removeEventListener('keydown', onKey); ov.remove(); }
+  ov.addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+  document.body.append(ov);
+}
+function copyText(text, label) {
+  function fallback() {
+    const inp = h('input', { value: text, readonly: true, 'aria-label': label || 'URL' });
+    const box = h('div', { class: 'copybox' }, h('p', { class: 'hint', text: '自動でコピーできませんでした。下のURLを選んでコピーしてください。' }), inp);
+    const sh = openSheet(label || 'URL', box);
+    inp.focus(); inp.select();
+    return sh;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function () { toast('コピーしました'); }, fallback);
+  } else fallback();
+}
+
+/* ---------- auth helpers ---------- */
+function ensureAnon() {
+  return new Promise(function (res, rej) {
+    const off = onAuthStateChanged(auth, function (u) {
+      off();
+      if (u) res(u);
+      else signInAnonymously(auth).then(function (c) { res(c.user); }, rej);
+    }, rej);
+  });
+}
+function currentAdmin() {
+  return new Promise(function (res) {
+    const off = onAuthStateChanged(adminAuth, function (u) {
+      off();
+      res(u && u.uid === ADMIN_UID ? u : null);
+    }, function () { res(null); });
+  });
+}
+// 管理者としてログイン済みなら、その部屋の合言葉の証明を返す（入室で合言葉を聞かないため）
+async function adminProof(roomId) {
+  const u = await currentAdmin();
+  if (!u) return null;
+  try {
+    const s = await getDoc(doc(adminDb, 'roomSecrets', roomId));
+    return s.exists() ? String(s.data().passHash || '') : null;
+  } catch (e) { return null; }
+}
+
+/* ---------- app shell and routing ---------- */
+const App = { view: null, routeKey: null };
+
+function parseHash(hash) {
+  const h0 = (hash || '').replace(/^#/, '');
+  if (h0 === 'admin') return { k: 'admin' };
+  const m = /^r-([a-z0-9]{4,24})$/.exec(h0);
+  if (m) return { k: 'room', id: m[1] };
+  return { k: 'home' };
+}
+function route(r) {
+  r = r || parseHash(location.hash);
+  const key = r.k + (r.id || '');
+  if (key === App.routeKey && App.view) return;
+  App.routeKey = key;
+  if (App.view && App.view.destroy) App.view.destroy();
+  App.view = null;
+  root.replaceChildren();
+  document.title = BASE_TITLE;
+  if (r.k === 'admin') mountAdmin();
+  else if (r.k === 'room') mountRoom(r);
+  else mountHome();
+}
+function go(hash) {
+  const r = parseHash(hash);
+  try { location.hash = hash; } catch (e) { /* ignore */ }
+  route(r);
+}
+function inviteUrl(id) { return location.origin + location.pathname + '#r-' + id; }
+
+function topbar(o) {
+  o = o || {};
+  return h('header', { class: 'top' },
+    o.back ? h('button', { class: 'ibtn', 'aria-label': 'ホームへ戻る', type: 'button', onclick: function () { go(''); } }, icon('back')) : null,
+    stampEl('印', 'red', 30),
+    h('strong', { class: 'brand', text: o.title || BASE_TITLE }),
+    h('span', { class: 'grow' }),
+    o.right || null);
+}
+function loadingPage(o) {
+  return [topbar(o), h('div', { class: 'page' }, h('div', { class: 'loading', text: 'よみこんでいます…' }))];
+}
+function errorPage(e, o) {
+  return [topbar(o), h('div', { class: 'page' }, h('div', { class: 'wrap' },
+    h('div', { class: 'card' },
+      h('h2', { class: 'sec-title', text: '読み込めませんでした' }),
+      h('p', { text: fbErr(e) }),
+      h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: function () { location.reload(); } }, '再読み込み')))))];
+}
+
+/* ---------- home ---------- */
+function mountHome() {
+  const page = h('div', { class: 'page' },
+    h('div', { class: 'wrap' },
+      h('div', { class: 'hero' },
+        stampEl('印', 'red', 84),
+        h('div', null,
+          h('h1', { text: BASE_TITLE }),
+          h('p', { text: '部屋ごとに名前とハンコを決めて話せる、招待制のチャットです。' }))),
+      h('section', { class: 'wrap tight' },
+        h('h2', { class: 'sec-title', text: '入り方' }),
+        h('ol', { class: 'steps' },
+          h('li', { text: '管理者から、部屋の招待URLを受け取ります。' }),
+          h('li', { text: 'URLを開いて、その部屋で使う名前とハンコを決めます。登録は要りません。' }),
+          h('li', { text: '合言葉がある部屋では、合言葉も入力します。' })),
+        h('p', { class: 'hint', text: 'メッセージは' + RETENTION_DAYS + '日たつと消えます。' })),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', type: 'button', onclick: function () { go('admin'); } }, '管理画面（部屋をつくる人）'))));
+  root.append(topbar(), page);
+}
+
+/* ---------- admin ---------- */
+function mountAdmin() {
+  const wrap = h('div', { class: 'wrap' });
+  const page = h('div', { class: 'page' }, wrap);
+  let dash = null;
+  let unsubAuth = null;
+
+  function setTop(loggedIn) {
+    root.replaceChildren(
+      topbar({
+        back: true, title: '管理画面',
+        right: loggedIn ? h('button', { class: 'btn small', type: 'button', onclick: function () { signOut(adminAuth); } }, 'ログアウト') : null
+      }),
+      page);
+  }
+  function stopDash() { if (dash) { dash.stop(); dash = null; } }
+  function showLogin(msg) { stopDash(); setTop(false); wrap.replaceChildren(loginForm(msg)); }
+  function showDash() { if (dash) return; setTop(true); wrap.replaceChildren(); dash = buildDash(wrap); }
+
+  function loginForm(msg) {
+    const email = h('input', { id: 'adm-email', type: 'email', autocomplete: 'username', inputmode: 'email' });
+    const pass = h('input', { id: 'adm-pass', type: 'password', autocomplete: 'current-password' });
+    const err = h('div', { class: 'err', role: 'alert', text: msg || '' });
+    const btn = h('button', { class: 'btn primary', type: 'submit' }, 'ログインする');
+    return h('form', {
+      class: 'card', onsubmit: function (e) {
+        e.preventDefault();
+        err.textContent = '';
+        btn.disabled = true;
+        signInWithEmailAndPassword(adminAuth, email.value.trim(), pass.value).then(function () { }, function (e2) {
+          err.textContent = fbErr(e2);
+        }).then(function () { btn.disabled = false; });
+      }
+    },
+      h('h2', { class: 'sec-title', text: '管理者ログイン' }),
+      h('p', { class: 'hint', text: 'Firebaseで登録した、管理者のメールアドレスとパスワードを入力します。' }),
+      h('div', { class: 'field' }, h('label', { for: 'adm-email', text: 'メールアドレス' }), email),
+      h('div', { class: 'field' }, h('label', { for: 'adm-pass', text: 'パスワード' }), pass),
+      err, btn);
+  }
+
+  wrap.append(h('div', { class: 'loading', text: 'よみこんでいます…' }));
+  root.replaceChildren(topbar({ back: true, title: '管理画面' }), page);
+  unsubAuth = onAuthStateChanged(adminAuth, function (u) {
+    if (u && u.uid === ADMIN_UID) showDash();
+    else if (u) { signOut(adminAuth); showLogin('このアカウントは管理者ではありません'); }
+    else showLogin();
+  }, function (e) { wrap.replaceChildren(h('div', { class: 'card' }, h('p', { text: fbErr(e) }))); });
+
+  App.view = { destroy: function () { if (unsubAuth) unsubAuth(); stopDash(); } };
+}
+
+async function purgeCollection(colRef) {
+  for (;;) {
+    const snap = await getDocs(query(colRef, limit(300)));
+    if (snap.empty) return;
+    const b = writeBatch(adminDb);
+    snap.docs.forEach(function (d) { b.delete(d.ref); });
+    await b.commit();
+    if (snap.size < 300) return;
+  }
+}
+async function deleteRoomDeep(id) {
+  await purgeCollection(collection(adminDb, 'rooms', id, 'messages'));
+  await purgeCollection(collection(adminDb, 'rooms', id, 'members'));
+  const b = writeBatch(adminDb);
+  b.delete(doc(adminDb, 'roomSecrets', id));
+  b.delete(doc(adminDb, 'rooms', id));
+  await b.commit();
+}
+
+function buildDash(wrap) {
+  let rooms = [];
+  let counts = {};
+  let loading = {};
+  let deleting = {};
+  let stopped = false;
+  const ui = { confirmDel: null, editPass: null };
+
+  const statsEl = h('div', { class: 'stats' });
+  const listEl = h('div', { class: 'rooms' });
+  const nameIn = h('input', { id: 'new-name', maxlength: '30', autocomplete: 'off' });
+  const passIn = h('input', { id: 'new-pass', type: 'text', maxlength: '30', autocomplete: 'off' });
+  const cerr = h('div', { class: 'err', role: 'alert' });
+  const cbtn = h('button', { class: 'btn primary', type: 'submit' }, '部屋をつくる');
+  const createForm = h('form', {
+    class: 'card', onsubmit: function (e) {
+      e.preventDefault();
+      cerr.textContent = '';
+      const name = nameIn.value.trim();
+      if (!name) { cerr.textContent = '部屋の名前を入力してください'; nameIn.focus(); return; }
+      const pass = passIn.value.trim();
+      const id = rid(8);
+      cbtn.disabled = true;
+      proofFor(id, pass).then(function (passHash) {
+        const b = writeBatch(adminDb);
+        b.set(doc(adminDb, 'rooms', id), { name: name, hasPass: !!pass, createdAt: serverTimestamp() });
+        b.set(doc(adminDb, 'roomSecrets', id), { passHash: passHash });
+        return b.commit();
+      }).then(function () {
+        nameIn.value = ''; passIn.value = '';
+        toast('部屋をつくりました。招待URLをコピーできます');
+      }, function (e2) { cerr.textContent = fbErr(e2); }).then(function () { cbtn.disabled = false; });
+    }
+  },
+    h('h2', { class: 'sec-title', text: '部屋をつくる' }),
+    h('div', { class: 'field' }, h('label', { for: 'new-name', text: '部屋の名前' }), nameIn),
+    h('div', { class: 'field' }, h('label', { for: 'new-pass', text: '合言葉（なくてもOK）' }), passIn,
+      h('span', { class: 'hint', text: '設定すると、招待URLを知っていても合言葉がないと入れません。数字4桁など短いものは避けてください。' })),
+    cerr, cbtn);
+  const refreshBtn = h('button', {
+    class: 'btn small', type: 'button', onclick: function () { counts = {}; loading = {}; renderAll(); loadCounts(); }
+  }, '数を更新');
+  wrap.append(
+    statsEl,
+    createForm,
+    h('section', { class: 'wrap tight' },
+      h('div', { class: 'rhead' }, h('h2', { class: 'sec-title', text: '部屋の一覧' }), refreshBtn),
+      listEl),
+    h('section', { class: 'card' },
+      h('h2', { class: 'sec-title', text: '自動で消えるもの' }),
+      h('p', { class: 'hint', text: 'メッセージは' + RETENTION_DAYS + '日たつと表示されなくなり、入室している人の画面が開かれたときに順に削除されます。' + RETENTION_DAYS + '日間まったく発言のない部屋は、この画面を開いたときに部屋ごと削除されます。' })));
+
+  function createdMs(r) { return tsMs(r.createdAt) || Date.now(); }
+  function activityMs(r) { const c = counts[r.id]; return Math.max(createdMs(r), (c && c.last) || 0); }
+
+  function renderStats() {
+    let members = 0, msgs = 0, ready = true;
+    rooms.forEach(function (r) {
+      const c = counts[r.id];
+      if (c) { members += c.members; msgs += c.messages; } else ready = false;
+    });
+    function stat(k, v) { return h('div', { class: 'stat' }, h('span', { class: 'k', text: k }), h('span', { class: 'v', text: String(v) })); }
+    statsEl.replaceChildren(
+      stat('部屋', rooms.length),
+      stat('参加している人', ready ? members : '…'),
+      stat('メッセージ', ready ? msgs : '…'));
+  }
+  function renderList() {
+    if (ui.editPass) return;
+    if (!rooms.length) { listEl.replaceChildren(h('div', { class: 'empty', text: 'まだ部屋がありません。上のフォームで最初の部屋をつくります。' })); return; }
+    listEl.replaceChildren.apply(listEl, rooms.map(roomCard));
+  }
+  function renderAll() { renderStats(); renderList(); }
+
+  function roomCard(r) {
+    const c = counts[r.id];
+    const left = Math.max(0, Math.ceil((activityMs(r) + RETENTION_DAYS * DAY_MS - Date.now()) / DAY_MS));
+    const confirming = ui.confirmDel === r.id;
+    const editing = ui.editPass === r.id;
+    const busy = !!deleting[r.id];
+    const actions = h('div', { class: 'row' },
+      h('button', { class: 'btn small primary', type: 'button', onclick: function () { go('r-' + r.id); } }, '部屋に入る'),
+      h('button', { class: 'btn small', type: 'button', onclick: function () { copyText(inviteUrl(r.id), '招待URL'); } }, '招待URLをコピー'),
+      h('button', {
+        class: 'btn small', type: 'button', onclick: function () {
+          ui.editPass = editing ? null : r.id; ui.confirmDel = null; renderList();
+        }
+      }, '合言葉'),
+      confirming
+        ? [h('button', {
+          class: 'btn small danger solid', type: 'button', disabled: busy, onclick: function () {
+            deleting[r.id] = true; renderList();
+            deleteRoomDeep(r.id).then(function () { ui.confirmDel = null; toast('部屋を削除しました'); }, function (e) { toast(fbErr(e)); })
+              .then(function () { delete deleting[r.id]; renderAll(); });
+          }
+        }, busy ? '削除中…' : '本当に削除する'),
+        h('button', { class: 'btn small', type: 'button', disabled: busy, onclick: function () { ui.confirmDel = null; renderList(); } }, 'やめる')]
+        : h('button', { class: 'btn small danger', type: 'button', onclick: function () { ui.confirmDel = r.id; ui.editPass = null; renderList(); } }, '削除'));
+    let passForm = null;
+    if (editing) {
+      const pin = h('input', { id: 'edit-pass-' + r.id, type: 'text', maxlength: '30', autocomplete: 'off', 'aria-label': '新しい合言葉' });
+      passForm = h('form', {
+        class: 'row', onsubmit: function (e) {
+          e.preventDefault();
+          const v = pin.value.trim();
+          proofFor(r.id, v).then(function (passHash) {
+            const b = writeBatch(adminDb);
+            b.update(doc(adminDb, 'rooms', r.id), { hasPass: !!v });
+            b.set(doc(adminDb, 'roomSecrets', r.id), { passHash: passHash });
+            return b.commit();
+          }).then(function () { ui.editPass = null; toast(v ? '合言葉を変えました' : '合言葉を外しました'); renderList(); },
+            function (e2) { toast(fbErr(e2)); });
+        }
+      },
+        h('div', { class: 'field grow-field' }, pin),
+        h('button', { class: 'btn small primary', type: 'submit' }, '保存'),
+        h('button', { class: 'btn small', type: 'button', onclick: function () { ui.editPass = null; renderList(); } }, 'やめる'),
+        h('span', { class: 'hint full', text: '空欄で保存すると、合言葉を外します。すでに入っている人は、そのまま使えます。' }));
+    }
+    return h('article', { class: 'rcard' },
+      h('div', { class: 'rhead' },
+        h('h3', { text: r.name }),
+        h('div', { class: 'tags' },
+          r.hasPass ? h('span', { class: 'pill on', text: '合言葉あり' }) : h('span', { class: 'pill', text: '合言葉なし' }),
+          c ? h('span', { class: 'pill', text: 'あと' + left + '日で消える' }) : null)),
+      h('dl', { class: 'facts' },
+        h('div', null, h('dt', { text: '参加' }), h('dd', { text: c ? c.members + '人' : '…' })),
+        h('div', null, h('dt', { text: 'メッセージ' }), h('dd', { text: c ? c.messages + '件' : '…' })),
+        h('div', null, h('dt', { text: '最後の発言' }), h('dd', { text: c ? (c.last ? ago(c.last) : 'まだなし') : '…' })),
+        h('div', null, h('dt', { text: 'つくった日' }), h('dd', { text: fmtDate(createdMs(r)) }))),
+      actions, passForm);
+  }
+
+  async function loadCounts() {
+    const targets = rooms.filter(function (r) { return !counts[r.id] && !loading[r.id]; });
+    await Promise.all(targets.map(async function (r) {
+      loading[r.id] = true;
+      try {
+        const mCol = collection(adminDb, 'rooms', r.id, 'members');
+        const gCol = collection(adminDb, 'rooms', r.id, 'messages');
+        const res = await Promise.all([
+          getCountFromServer(mCol),
+          getCountFromServer(gCol),
+          getDocs(query(gCol, orderBy('createdAt', 'desc'), limit(1)))
+        ]);
+        let last = 0;
+        if (!res[2].empty) last = tsMs(res[2].docs[0].data().createdAt) || 0;
+        counts[r.id] = { members: res[0].data().count, messages: res[1].data().count, last: last };
+      } catch (e) {
+        if (!stopped) toast(fbErr(e));
+      }
+      delete loading[r.id];
+    }));
+    if (stopped) return;
+    renderAll();
+    // 14日間まったく発言のない部屋は、部屋ごと消す
+    rooms.forEach(function (r) {
+      const c = counts[r.id];
+      if (!c || deleting[r.id] || !tsMs(r.createdAt)) return;
+      if (Date.now() - activityMs(r) > RETENTION_DAYS * DAY_MS) {
+        deleting[r.id] = true;
+        deleteRoomDeep(r.id).then(function () { toast('「' + r.name + '」は' + RETENTION_DAYS + '日間動きがなかったので削除しました'); },
+          function (e) { toast(fbErr(e)); }).then(function () { delete deleting[r.id]; });
+      }
+    });
+  }
+
+  const unsub = onSnapshot(query(collection(adminDb, 'rooms'), orderBy('createdAt', 'desc')), function (snap) {
+    rooms = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data({ serverTimestamps: 'estimate' })); });
+    Object.keys(counts).forEach(function (k) { if (!rooms.some(function (r) { return r.id === k; })) delete counts[k]; });
+    renderAll();
+    loadCounts();
+  }, function (e) {
+    listEl.replaceChildren(h('div', { class: 'card' }, h('p', { text: fbErr(e) })));
+  });
+  renderAll();
+  return { stop: function () { stopped = true; unsub(); } };
+}
+
+/* ---------- identity form (join / edit) ---------- */
+function identityForm(o) {
+  const name = h('input', { id: 'id-name', maxlength: '12', autocomplete: 'off', value: o.name || '' });
+  const stampIn = h('input', { id: 'id-stamp', autocomplete: 'off', value: o.text || '', 'aria-describedby': 'id-stamp-hint' });
+  const pass = o.passNeeded ? h('input', { id: 'id-pass', type: 'password', autocomplete: 'off' }) : null;
+  const err = h('div', { class: 'err', role: 'alert' });
+  let color = o.color || 'red';
+  let touched = !!o.text;
+  const prevBox = h('div');
+  const swBox = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'ハンコの色' });
+  const submit = h('button', { class: 'btn primary', type: 'submit' }, o.submitLabel || '入室する');
+
+  function drawPreview() { prevBox.replaceChildren(stampEl(stampIn.value || '？', color, 96)); }
+  function drawSwatches() {
+    swBox.replaceChildren.apply(swBox, COLORS.map(function (c) {
+      return h('button', { type: 'button', class: 'swatch c-' + c[0], role: 'radio', 'aria-checked': String(color === c[0]), onclick: function () { color = c[0]; drawSwatches(); drawPreview(); } },
+        h('span', { class: 'dot' }), h('span', { text: c[1] }));
+    }));
+  }
+  function onName(e) {
+    if (e && e.isComposing) return;
+    if (!touched) { stampIn.value = clipChars(name.value.trim(), 2); drawPreview(); }
+  }
+  function onStamp(e) {
+    if (e && e.isComposing) return;
+    touched = true;
+    const v = clipChars(stampIn.value, 2);
+    if (v !== stampIn.value) stampIn.value = v;
+    drawPreview();
+  }
+  name.addEventListener('input', onName);
+  name.addEventListener('compositionend', function () { onName(); });
+  stampIn.addEventListener('input', onStamp);
+  stampIn.addEventListener('compositionend', function () { onStamp(); });
+
+  const form = h('form', {
+    class: 'card', onsubmit: function (e) {
+      e.preventDefault();
+      err.textContent = '';
+      const n = name.value.trim();
+      if (!n) { err.textContent = 'この部屋で使う名前を入力してください'; name.focus(); return; }
+      const t = clipChars(stampIn.value.trim() || n, 2);
+      if (pass && !pass.value.trim()) { err.textContent = '合言葉を入力してください'; pass.focus(); return; }
+      submit.disabled = true;
+      new Promise(function (res) { res(o.onSubmit({ name: n, text: t, color: color, pass: pass ? pass.value : '' })); })
+        .then(function () { }, function (e2) { err.textContent = o.mapError ? o.mapError(e2) : fbErr(e2); })
+        .then(function () { submit.disabled = false; });
+    }
+  },
+    h('div', { class: 'preview' }, prevBox,
+      h('p', { class: 'hint', text: '発言のたびに、この名前とハンコが表示されます。別の部屋では、別の名前とハンコにできます。' })),
+    h('div', { class: 'field' }, h('label', { for: 'id-name', text: '名前（12文字まで）' }), name),
+    h('div', { class: 'field' }, h('label', { for: 'id-stamp', text: 'ハンコの文字（1〜2文字）' }), stampIn,
+      h('span', { class: 'hint', id: 'id-stamp-hint', text: '名前に合わせて自動で入ります。自由に書き換えられます。' })),
+    h('div', { class: 'field' }, h('span', { class: 'label', text: 'ハンコの色' }), swBox),
+    pass ? h('div', { class: 'field' }, h('label', { for: 'id-pass', text: 'この部屋の合言葉' }), pass) : null,
+    err, submit);
+  drawSwatches(); drawPreview();
+  return form;
+}
+
+/* ---------- image preparation: always shrinks until it fits ---------- */
+function prepareImage(file, maxKB) {
+  const url = URL.createObjectURL(file);
+  return new Promise(function (res, rej) {
+    const img = new Image();
+    img.onload = function () { res(img); };
+    img.onerror = function () { rej(new Error('decode')); };
+    img.src = url;
+  }).then(function (img) {
+    let maxSide = 1280, q = 0.82, data = null, w = 1, hh = 1;
+    for (let i = 0; i < 24; i++) {
+      const sc = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      w = Math.max(1, Math.round(img.naturalWidth * sc)); hh = Math.max(1, Math.round(img.naturalHeight * sc));
+      const c = document.createElement('canvas'); c.width = w; c.height = hh;
+      const x = c.getContext('2d');
+      x.fillStyle = '#ffffff'; x.fillRect(0, 0, w, hh); x.drawImage(img, 0, 0, w, hh);
+      data = c.toDataURL('image/jpeg', q);
+      if (data.length * 0.75 <= maxKB * 1024) break;
+      if (q > 0.5) q -= 0.12;
+      else if (maxSide > 320) maxSide = Math.max(320, Math.round(maxSide * 0.75));
+      else q = Math.max(0.2, q - 0.1);
+    }
+    return { src: data, w: w, h: hh, orig: file.size };
+  }).then(function (r) { URL.revokeObjectURL(url); return r; }, function (e) { URL.revokeObjectURL(url); throw e; });
+}
+
+/* ---------- room ---------- */
+function mountRoom(r) {
+  const id = r.id;
+  const container = h('div', { class: 'room' });
+  root.append(container);
+  const RV = {
+    mode: null, uid: null, room: null, members: {}, msgs: [],
+    gotMembers: false, gotMsgs: false, seen: null, unread: 0,
+    pendingImg: null, pickerFor: null, sending: false, forceBottom: false, newCount: 0, sig: '',
+    unsubs: [], timers: [], destroyed: false, leaving: false
+  };
+  const els = {};
+
+  function memberRef() { return doc(db, 'rooms', id, 'members', RV.uid); }
+  function setTitle() {
+    document.title = (RV.unread ? '(' + RV.unread + ') ' : '') + (RV.room ? RV.room.name + ' - ' : '') + BASE_TITLE;
+  }
+  function stopListeners() {
+    RV.unsubs.forEach(function (u) { try { u(); } catch (e) { /* ignore */ } });
+    RV.unsubs = [];
+    RV.timers.forEach(function (t) { clearInterval(t); });
+    RV.timers = [];
+  }
+  function showPage(nodes) { container.replaceChildren.apply(container, nodes); }
+
+  /* start */
+  showPage(loadingPage());
+  (async function begin() {
+    try {
+      const user = await ensureAnon();
+      RV.uid = user.uid;
+      const snap = await getDoc(doc(db, 'rooms', id));
+      if (RV.destroyed) return;
+      if (!snap.exists()) { buildGone(); return; }
+      RV.room = Object.assign({ id: id }, snap.data());
+      const mine = await getDoc(memberRef());
+      if (RV.destroyed) return;
+      if (mine.exists()) startChat(); else buildGate();
+    } catch (e) {
+      if (!RV.destroyed) showPage(errorPage(e));
+    }
+  })();
+
+  /* gone */
+  function buildGone() {
+    stopListeners();
+    RV.mode = 'gone';
+    showPage([
+      topbar({ back: true }),
+      h('div', { class: 'page' }, h('div', { class: 'wrap' },
+        h('div', { class: 'card' },
+          h('h2', { class: 'sec-title', text: 'この部屋は見つかりません' }),
+          h('p', { text: 'URLが違うか、管理者が部屋を削除したか、' + RETENTION_DAYS + '日間動きがなくて消えた可能性があります。' }),
+          h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: function () { go(''); } }, 'ホームへ')))))
+    ]);
+    document.title = BASE_TITLE;
+  }
+
+  /* gate */
+  async function buildGate() {
+    stopListeners();
+    RV.mode = 'gate';
+    const rm = RV.room;
+    const adminHash = rm.hasPass ? await adminProof(id) : null;
+    if (RV.destroyed || RV.mode !== 'gate') return;
+    const passNeeded = !!rm.hasPass && adminHash == null;
+    const form = identityForm({
+      submitLabel: '入室する', passNeeded: passNeeded,
+      onSubmit: async function (v) {
+        let proof = '';
+        if (rm.hasPass) proof = adminHash != null ? adminHash : await proofFor(id, v.pass);
+        await setDoc(memberRef(), { name: v.name, stamp: { t: v.text, c: v.color }, joinedAt: serverTimestamp(), proof: proof });
+        startChat();
+      },
+      mapError: function (e) {
+        if (e && e.code === 'permission-denied') return passNeeded ? '合言葉が違います' : 'この部屋に入れませんでした。管理者に確認してください';
+        return fbErr(e);
+      }
+    });
+    showPage([
+      topbar({ back: false }),
+      h('div', { class: 'page' }, h('div', { class: 'wrap gate' },
+        h('div', null, h('h1', { class: 'gate-title', text: rm.name }), h('p', { class: 'hint', text: 'この部屋で使う名前とハンコを決めて入ります。' })),
+        form,
+        h('p', { class: 'hint', text: 'この端末で入った記録は、ブラウザのデータを消すと消えます。そのときは、もう一度名前とハンコを決めて入ってください。' })))
+    ]);
+    document.title = rm.name + ' - ' + BASE_TITLE;
+  }
+
+  /* chat */
+  function startChat() {
+    stopListeners();
+    RV.mode = 'chat';
+    RV.members = {}; RV.msgs = []; RV.gotMembers = false; RV.gotMsgs = false; RV.seen = null; RV.sig = ''; RV.leaving = false;
+    buildChatShell();
+    function onErr(e) {
+      if (RV.destroyed || RV.leaving) return;
+      if (e && e.code === 'permission-denied') {
+        // 入室の記録がなくなった（管理者が外した、など）
+        getDoc(memberRef()).then(function (m) { if (!m.exists()) buildGate(); }, function () { });
+        return;
+      }
+      toast(fbErr(e));
+    }
+    RV.unsubs.push(onSnapshot(doc(db, 'rooms', id), function (s) {
+      if (!s.exists()) { buildGone(); return; }
+      RV.room = Object.assign({ id: id }, s.data());
+      updateHeader();
+    }, onErr));
+    RV.unsubs.push(onSnapshot(collection(db, 'rooms', id, 'members'), function (s) {
+      const mm = {};
+      s.forEach(function (d) { mm[d.id] = d.data(); });
+      RV.members = mm; RV.gotMembers = true;
+      updateHeader(); updateChat();
+    }, onErr));
+    const cutoff = Timestamp.fromMillis(Date.now() - RETENTION_DAYS * DAY_MS);
+    RV.unsubs.push(onSnapshot(query(collection(db, 'rooms', id, 'messages'), where('createdAt', '>', cutoff), orderBy('createdAt', 'desc'), limit(150)), function (s) {
+      const list = [];
+      s.forEach(function (d) {
+        const x = d.data({ serverTimestamps: 'estimate' });
+        list.push({ id: d.id, uid: x.uid, text: x.text || '', img: x.img || null, ts: tsMs(x.createdAt) || Date.now(), rx: x.rx || {} });
+      });
+      list.reverse();
+      RV.msgs = list; RV.gotMsgs = true;
+      updateChat();
+    }, onErr));
+    cleanupExpired();
+    RV.timers.push(setInterval(cleanupExpired, 30 * 60 * 1000));
+  }
+
+  // 14日たったメッセージを、開いている人の画面から少しずつ消す
+  async function cleanupExpired() {
+    try {
+      const cut = Timestamp.fromMillis(Date.now() - (RETENTION_DAYS * DAY_MS + 3600000));
+      const s = await getDocs(query(collection(db, 'rooms', id, 'messages'), where('createdAt', '<=', cut), limit(25)));
+      await Promise.all(s.docs.map(function (d) { return deleteDoc(d.ref).catch(function () { }); }));
+    } catch (e) { /* 掃除は失敗しても困らない */ }
+  }
+
+  function buildChatShell() {
+    els.title = h('strong', { text: RV.room.name });
+    els.sub = h('span', { text: 'メッセージは' + RETENTION_DAYS + '日で消えます' });
+    els.count = h('span');
+    els.membersBtn = h('button', { class: 'ibtn', type: 'button', 'aria-label': '参加している人を見る', onclick: openMembers }, icon('users'), els.count);
+    const menuBtn = h('button', { class: 'ibtn', type: 'button', 'aria-label': 'メニュー', onclick: openMenu }, icon('dots'));
+    const header = h('header', { class: 'top' },
+      h('div', { class: 'rtitle grow' }, els.title, els.sub),
+      els.membersBtn, menuBtn);
+    els.list = h('div', { class: 'msgs', role: 'log', 'aria-live': 'off' });
+    els.list.appendChild(h('div', { class: 'loading', text: 'よみこんでいます…' }));
+    els.list.addEventListener('scroll', function () { if (nearBottom()) hidePill(); });
+    els.pill = h('button', { class: 'newpill', type: 'button', hidden: true, onclick: function () { scrollBottom(); hidePill(); } });
+    els.pending = h('div', { class: 'pending', hidden: true });
+    els.ta = h('textarea', { id: 'msg-input', rows: '1', maxlength: '2000', 'aria-label': 'メッセージ', placeholder: 'メッセージを入力' });
+    els.file = h('input', { type: 'file', accept: 'image/*', hidden: true, id: 'msg-file', 'aria-label': '画像を選ぶ' });
+    els.imgBtn = h('button', { class: 'ibtn', type: 'button', 'aria-label': '画像を添付', onclick: function () { els.file.click(); } }, icon('image'));
+    els.send = h('button', { class: 'ibtn send', type: 'button', 'aria-label': '送信', disabled: true, onclick: send }, icon('send'));
+    const composer = h('div', { class: 'composer' }, els.imgBtn, els.ta, els.send, els.file);
+    els.ta.addEventListener('input', function () { autosize(); syncSend(); });
+    els.ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia && matchMedia('(hover:hover)').matches) { e.preventDefault(); send(); }
+    });
+    els.file.addEventListener('change', onFile);
+    showPage([header, els.list, els.pill, els.pending, composer]);
+    setTitle();
+  }
+  function updateHeader() {
+    if (RV.mode !== 'chat' || !els.title) return;
+    els.title.textContent = RV.room.name;
+    els.count.textContent = String(Object.keys(RV.members).length);
+    setTitle();
+  }
+  function autosize() {
+    els.ta.style.height = 'auto';
+    els.ta.style.height = Math.min(els.ta.scrollHeight, 140) + 'px';
+  }
+  function syncSend() { els.send.disabled = RV.sending || (!els.ta.value.trim() && !RV.pendingImg); }
+  function nearBottom() { return els.list.scrollHeight - els.list.scrollTop - els.list.clientHeight < 90; }
+  function scrollBottom() { els.list.scrollTop = els.list.scrollHeight; }
+  function hidePill() { RV.newCount = 0; els.pill.hidden = true; }
+  function showPill(n) {
+    RV.newCount += n;
+    els.pill.replaceChildren('新着 ' + RV.newCount + '件', icon('down'));
+    els.pill.hidden = false;
+  }
+
+  function computeSig() {
+    const me = RV.uid;
+    const msgs = RV.msgs.map(function (m) {
+      const rx = m.rx || {};
+      const parts = Object.keys(rx).map(function (u) { return u.slice(0, 4) + (rx[u] || []).join('') + (u === me ? '*' : ''); }).join(',');
+      return m.id + ':' + parts;
+    }).join('|');
+    const mem = Object.keys(RV.members).map(function (k) { const x = RV.members[k]; return k + x.name + x.stamp.t + x.stamp.c; }).join('|');
+    return msgs + '#' + mem + '#' + RV.pickerFor;
+  }
+  function updateChat() {
+    if (RV.mode !== 'chat' || !RV.gotMembers || !RV.gotMsgs) return;
+    const sig = computeSig();
+    if (sig === RV.sig) return;
+    RV.sig = sig;
+    const me = RV.uid;
+    const first = RV.seen === null;
+    const fresh = first ? [] : RV.msgs.filter(function (m) { return !RV.seen.has(m.id) && m.uid !== me; });
+    RV.seen = new Set(RV.msgs.map(function (m) { return m.id; }));
+    const wasNear = first || nearBottom() || RV.forceBottom;
+    const prevTop = els.list.scrollTop;
+    renderMsgs();
+    if (wasNear) scrollBottom(); else els.list.scrollTop = prevTop;
+    RV.forceBottom = false;
+    if (fresh.length) {
+      if (document.hidden) notifyIncoming(fresh);
+      else if (!wasNear) showPill(fresh.length);
+    }
+  }
+  function notifyIncoming(fresh) {
+    RV.unread += fresh.length;
+    setTitle();
+    if (window.Notification && Notification.permission === 'granted') {
+      try {
+        const m = fresh[fresh.length - 1];
+        const who = RV.members[m.uid] ? RV.members[m.uid].name : 'だれか';
+        new Notification(RV.room.name, { body: who + ': ' + (m.text ? m.text.slice(0, 80) : '画像を送りました'), tag: 'hc-' + id });
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  function renderMsgs() {
+    const nodes = [];
+    if (!RV.msgs.length) nodes.push(h('div', { class: 'empty', text: 'まだ発言がありません。最初のメッセージを送ってみましょう。' }));
+    let prev = null, lastDay = '';
+    RV.msgs.forEach(function (m) {
+      const dk = dayKey(m.ts);
+      if (dk !== lastDay) { nodes.push(h('div', { class: 'day', text: dayLabel(m.ts) })); lastDay = dk; prev = null; }
+      const cont = !!(prev && prev.uid === m.uid && m.ts - prev.ts < 5 * 60000);
+      nodes.push(msgEl(m, RV.members[m.uid], cont));
+      prev = m;
+    });
+    els.list.replaceChildren.apply(els.list, nodes);
+  }
+  function msgEl(m, mem, cont) {
+    const me = RV.uid;
+    const mine = m.uid === me;
+    const who = mem || { name: '退室した人', stamp: { t: '？', c: 'ink' } };
+    const body = h('div', { class: 'body' });
+    if (!cont) body.append(h('div', { class: 'meta' }, h('span', { class: 'name', text: who.name }), h('time', { text: fmtTime(m.ts) })));
+    if (m.text) body.append(h('div', { class: 'bubble', text: m.text }));
+    if (m.img) body.append(h('div', { class: 'bubble pic' },
+      h('button', { class: 'picbtn', type: 'button', 'aria-label': '画像を拡大', onclick: function () { openLightbox(m.img.src); } },
+        h('img', { src: m.img.src, width: m.img.w, height: m.img.h, alt: '送られた画像', loading: 'lazy' }))));
+    // リアクションを、絵文字ごとの人数にまとめる
+    const tally = {};
+    Object.keys(m.rx || {}).forEach(function (u) { (m.rx[u] || []).forEach(function (e) { (tally[e] = tally[e] || []).push(u); }); });
+    const chips = Object.keys(tally).sort(function (a, b) { return EMOJIS.indexOf(a) - EMOJIS.indexOf(b); }).map(function (e) {
+      const on = tally[e].indexOf(me) >= 0;
+      return h('button', { class: 'chip', type: 'button', 'aria-pressed': String(on), 'aria-label': e + ' ' + tally[e].length + '人', onclick: function () { react(m.id, e); } }, e, h('span', { class: 'n', text: tally[e].length }));
+    });
+    const open = RV.pickerFor === m.id;
+    const addBtn = h('button', { class: 'chip add' + (open ? ' open' : ''), type: 'button', 'aria-label': 'リアクションを選ぶ', 'aria-expanded': String(open), onclick: function () { RV.pickerFor = open ? null : m.id; RV.sig = ''; updateChat(); } }, icon('plus'));
+    const rxRow = h('div', { class: 'rx' }, chips, addBtn);
+    if (open) {
+      rxRow.append(h('div', { class: 'picker', role: 'group', 'aria-label': 'リアクション' }, EMOJIS.map(function (e) {
+        return h('button', { type: 'button', 'aria-label': e, onclick: function () { RV.pickerFor = null; react(m.id, e); } }, e);
+      })));
+    }
+    body.append(rxRow);
+    return h('div', { class: 'msg' + (mine ? ' me' : '') + (cont ? ' cont' : '') },
+      cont ? h('div', { class: 'slot' }) : stampEl(who.stamp.t, who.stamp.c, 40),
+      body);
+  }
+
+  async function react(msgId, emoji) {
+    const m = RV.msgs.find(function (x) { return x.id === msgId; });
+    const mineOn = !!(m && (m.rx[RV.uid] || []).indexOf(emoji) >= 0);
+    RV.pickerFor = null;
+    try {
+      const patch = {};
+      patch['rx.' + RV.uid] = mineOn ? arrayRemove(emoji) : arrayUnion(emoji);
+      await updateDoc(doc(db, 'rooms', id, 'messages', msgId), patch);
+    } catch (e) { toast(fbErr(e)); }
+    RV.sig = ''; updateChat();
+  }
+
+  function pendingText() {
+    const p = RV.pendingImg, now = p.src.length * 0.75;
+    if (p.orig > now * 1.15) return '大きい画像を自動で小さくしました（' + fmtSize(p.orig) + ' → 約' + fmtSize(now) + '）';
+    return '画像を1枚添付しています（約' + fmtSize(now) + '）';
+  }
+  function renderPending() {
+    if (!RV.pendingImg) { els.pending.hidden = true; els.pending.replaceChildren(); syncSend(); return; }
+    els.pending.hidden = false;
+    els.pending.replaceChildren(
+      h('img', { src: RV.pendingImg.src, alt: '送る画像のプレビュー' }),
+      h('div', { class: 'grow', text: pendingText() }),
+      h('button', { class: 'ibtn', type: 'button', 'aria-label': '添付をやめる', onclick: function () { RV.pendingImg = null; renderPending(); } }, icon('x')));
+    syncSend();
+  }
+  function onFile() {
+    const f = els.file.files && els.file.files[0];
+    els.file.value = '';
+    if (!f) return;
+    if (!/^image\//.test(f.type)) { toast('画像ファイルを選んでください'); return; }
+    if (f.size > 60 * 1048576) { toast('画像が大きすぎます（60MBまで）。別の画像を選んでください'); return; }
+    toast('画像を小さくしています');
+    prepareImage(f, IMG_KB).then(function (img) { RV.pendingImg = img; renderPending(); }, function () {
+      toast('この形式の画像は読み込めませんでした。JPEGかPNGでお試しください');
+    });
+  }
+  async function send() {
+    if (RV.sending) return;
+    const text = els.ta.value.trim();
+    if (!text && !RV.pendingImg) return;
+    const img = RV.pendingImg;
+    RV.sending = true; syncSend();
+    try {
+      await addDoc(collection(db, 'rooms', id, 'messages'), {
+        uid: RV.uid, text: text, img: img ? { src: img.src, w: img.w, h: img.h } : null,
+        createdAt: serverTimestamp(), rx: {}
+      });
+      els.ta.value = ''; RV.pendingImg = null; renderPending(); autosize(); RV.forceBottom = true;
+    } catch (e) { toast(fbErr(e)); }
+    RV.sending = false; syncSend(); els.ta.focus();
+  }
+
+  /* sheets */
+  function openMembers() {
+    const ids = Object.keys(RV.members);
+    const list = h('ul', { class: 'mlist' }, ids.map(function (k) {
+      const m = RV.members[k];
+      return h('li', null, stampEl(m.stamp.t, m.stamp.c, 36), h('span', { text: m.name + (k === RV.uid ? '（あなた）' : '') }));
+    }));
+    openSheet('参加している人 ' + ids.length + '人', list);
+  }
+  function notifyState() {
+    if (!('Notification' in window)) return { label: '通知はこのブラウザで使えません', sub: '', disabled: true };
+    if (Notification.permission === 'granted') return { label: '通知は許可済みです', sub: '別のタブを開いている間に新着があると、通知とタブ名でお知らせします。', disabled: true };
+    if (Notification.permission === 'denied') return { label: '通知がブロックされています', sub: 'ブラウザのサイト設定で許可すると使えます。', disabled: true };
+    return { label: '新着の通知を許可する', sub: 'ページを開いている間だけ届きます。', disabled: false };
+  }
+  function openMenu() {
+    let sheet = null;
+    function item(label, sub, fn, cls, disabled) {
+      return h('button', { type: 'button', class: cls || '', disabled: disabled || false, onclick: function () { sheet.close(); fn(); } }, label, sub ? h('small', { text: sub }) : null);
+    }
+    const ns = notifyState();
+    const menu = h('div', { class: 'menu' },
+      item('名前とハンコを変える', 'この部屋での表示だけが変わります。', editIdentity),
+      item(ns.label, ns.sub, askNotify, '', ns.disabled),
+      item('この部屋から出る', '名前とハンコを手放します。入り直すと新しい名前になります。', leave, 'danger'));
+    sheet = openSheet('メニュー', menu);
+  }
+  function askNotify() {
+    try {
+      Promise.resolve(Notification.requestPermission()).then(function (p) { toast(p === 'granted' ? '通知を許可しました' : '通知は許可されませんでした'); });
+    } catch (e) { toast('このブラウザでは通知を出せません'); }
+  }
+  function editIdentity() {
+    const cur = RV.members[RV.uid];
+    if (!cur) return;
+    let sheet = null;
+    const form = identityForm({
+      name: cur.name, text: cur.stamp.t, color: cur.stamp.c, submitLabel: '変更する',
+      onSubmit: async function (v) {
+        await updateDoc(memberRef(), { name: v.name, stamp: { t: v.text, c: v.color } });
+        sheet.close(); toast('変更しました');
+      }
+    });
+    sheet = openSheet('名前とハンコ', form);
+  }
+  async function leave() {
+    RV.leaving = true;
+    try {
+      await deleteDoc(memberRef());
+      stopListeners();
+      buildGate();
+    } catch (e) {
+      RV.leaving = false;
+      toast(fbErr(e));
+    }
+  }
+
+  function onVisible() { if (!document.hidden) { RV.unread = 0; setTitle(); } }
+  document.addEventListener('visibilitychange', onVisible);
+  App.view = {
+    destroy: function () {
+      RV.destroyed = true;
+      stopListeners();
+      document.removeEventListener('visibilitychange', onVisible);
+      document.title = BASE_TITLE;
+    }
+  };
+}
+
+/* ---------- boot ---------- */
+window.addEventListener('unhandledrejection', function (e) { if (e.reason && e.reason.code) toast(fbErr(e.reason)); });
+window.addEventListener('hashchange', function () { route(); });
+route();
+</script>
+</body>
+</html>
