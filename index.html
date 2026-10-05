@@ -197,6 +197,13 @@ input[type=number]{font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){.switch::after{transition:none}}
 .loading,.loadfail{color:var(--muted);text-align:center;padding:40px 16px}
 [hidden]{display:none!important}
+.chip.tr{color:var(--muted)}
+.chip.tr[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.trans{background:var(--notice);border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;gap:2px;max-width:100%}
+.trans small{font-size:12px;color:var(--muted)}
+.trans .ttext{white-space:pre-wrap;overflow-wrap:anywhere}
+.trans.bad .ttext{color:var(--bad);font-weight:700;font-size:14px}
+.menu button[aria-pressed="true"]{color:var(--accent-ink)}
 </style>
 </head>
 <body>
@@ -240,6 +247,12 @@ const adminDb = getFirestore(adminApp);
 const RETENTION_DAYS = 14;
 const DAY_MS = 86400000;
 const IMG_KB = 250;
+// 翻訳用の中継（Cloudflare Workers）のURL。空のままなら、翻訳ボタンは出ません。
+const TRANSLATE_URL = 'https://hanko-translate.alexandrite0193.workers.dev/';
+const TLANGS = [['ja', '日本語'], ['en', 'English（英語）'], ['zh', '中文（中国語）'], ['ko', '한국어（韓国語）'], ['es', 'Español（スペイン語）'], ['fr', 'Français（フランス語）'], ['ru', 'Русский（ロシア語）'], ['pt', 'Português（ポルトガル語）']];
+function tlangName(c) { const f = TLANGS.find(function (x) { return x[0] === c; }); return f ? f[1] : c; }
+function loadTLang() { try { const v = localStorage.getItem('hc-tlang'); if (TLANGS.some(function (x) { return x[0] === v; })) return v; } catch (e) { /* ignore */ } return 'ja'; }
+function saveTLang(v) { try { localStorage.setItem('hc-tlang', v); } catch (e) { /* ignore */ } }
 const BASE_TITLE = 'ハンコチャット';
 const EMOJIS = ['👍', '❤️', '😂', '🎉', '🙏', '👀'];
 const COLORS = [['red', '朱'], ['blue', '藍'], ['green', '緑'], ['purple', '紫'], ['orange', '橙'], ['ink', '墨']];
@@ -351,9 +364,9 @@ function icon(name) {
   return s;
 }
 function stampEl(text, color, size) {
-  const chars = Array.from(text || '').slice(0, 2);
+  const chars = Array.from(text || '').slice(0, 3);
   const wide = chars.some(function (c) { return c.charCodeAt(0) > 0x2e7f; });
-  const fs = chars.length > 1 ? (wide ? 32 : 38) : (wide ? 52 : 58);
+  const fs = chars.length > 2 ? (wide ? 25 : 30) : chars.length > 1 ? (wide ? 32 : 38) : (wide ? 52 : 58);
   const svg = document.createElementNS(SVGNS, 'svg');
   svg.setAttribute('viewBox', '0 0 100 100');
   svg.setAttribute('width', size || 40);
@@ -787,12 +800,12 @@ function identityForm(o) {
   }
   function onName(e) {
     if (e && e.isComposing) return;
-    if (!touched) { stampIn.value = clipChars(name.value.trim(), 2); drawPreview(); }
+    if (!touched) { stampIn.value = clipChars(name.value.trim(), 3); drawPreview(); }
   }
   function onStamp(e) {
     if (e && e.isComposing) return;
     touched = true;
-    const v = clipChars(stampIn.value, 2);
+    const v = clipChars(stampIn.value, 3);
     if (v !== stampIn.value) stampIn.value = v;
     drawPreview();
   }
@@ -807,7 +820,7 @@ function identityForm(o) {
       err.textContent = '';
       const n = name.value.trim();
       if (!n) { err.textContent = 'この部屋で使う名前を入力してください'; name.focus(); return; }
-      const t = clipChars(stampIn.value.trim() || n, 2);
+      const t = clipChars(stampIn.value.trim() || n, 3);
       if (pass && !pass.value.trim()) { err.textContent = '合言葉を入力してください'; pass.focus(); return; }
       submit.disabled = true;
       new Promise(function (res) { res(o.onSubmit({ name: n, text: t, color: color, pass: pass ? pass.value : '' })); })
@@ -818,7 +831,7 @@ function identityForm(o) {
     h('div', { class: 'preview' }, prevBox,
       h('p', { class: 'hint', text: '発言のたびに、この名前とハンコが表示されます。別の部屋では、別の名前とハンコにできます。' })),
     h('div', { class: 'field' }, h('label', { for: 'id-name', text: '名前（12文字まで）' }), name),
-    h('div', { class: 'field' }, h('label', { for: 'id-stamp', text: 'ハンコの文字（1〜2文字）' }), stampIn,
+    h('div', { class: 'field' }, h('label', { for: 'id-stamp', text: 'ハンコの文字（1〜3文字）' }), stampIn,
       h('span', { class: 'hint', id: 'id-stamp-hint', text: '名前に合わせて自動で入ります。自由に書き換えられます。' })),
     h('div', { class: 'field' }, h('span', { class: 'label', text: 'ハンコの色' }), swBox),
     pass ? h('div', { class: 'field' }, h('label', { for: 'id-pass', text: 'この部屋の合言葉' }), pass) : null,
@@ -861,7 +874,7 @@ function mountRoom(r) {
   const RV = {
     mode: null, uid: null, room: null, members: {}, msgs: [],
     gotMembers: false, gotMsgs: false, seen: null, unread: 0,
-    pendingImg: null, pickerFor: null, sending: false, forceBottom: false, newCount: 0, sig: '',
+    pendingImg: null, pickerFor: null, user: null, trans: {}, tlang: loadTLang(), sending: false, forceBottom: false, newCount: 0, sig: '',
     unsubs: [], timers: [], destroyed: false, leaving: false
   };
   const els = {};
@@ -883,7 +896,7 @@ function mountRoom(r) {
   (async function begin() {
     try {
       const user = await ensureAnon();
-      RV.uid = user.uid;
+      RV.uid = user.uid; RV.user = user;
       const snap = await getDoc(doc(db, 'rooms', id));
       if (RV.destroyed) return;
       if (!snap.exists()) { buildGone(); return; }
@@ -1047,7 +1060,8 @@ function mountRoom(r) {
       return m.id + ':' + parts;
     }).join('|');
     const mem = Object.keys(RV.members).map(function (k) { const x = RV.members[k]; return k + x.name + x.stamp.t + x.stamp.c; }).join('|');
-    return msgs + '#' + mem + '#' + RV.pickerFor;
+    const tr = Object.keys(RV.trans).map(function (k) { const t = RV.trans[k]; return k + t.lang + t.state; }).join(',');
+    return msgs + '#' + mem + '#' + RV.pickerFor + '#' + tr;
   }
   function updateChat() {
     if (RV.mode !== 'chat' || !RV.gotMembers || !RV.gotMsgs) return;
@@ -1112,16 +1126,58 @@ function mountRoom(r) {
     });
     const open = RV.pickerFor === m.id;
     const addBtn = h('button', { class: 'chip add' + (open ? ' open' : ''), type: 'button', 'aria-label': 'リアクションを選ぶ', 'aria-expanded': String(open), onclick: function () { RV.pickerFor = open ? null : m.id; RV.sig = ''; updateChat(); } }, icon('plus'));
-    const rxRow = h('div', { class: 'rx' }, chips, addBtn);
+    const tr = RV.trans[m.id];
+    const trOn = !!(tr && tr.lang === RV.tlang);
+    const trBtn = (TRANSLATE_URL && m.text)
+      ? h('button', { class: 'chip tr', type: 'button', 'aria-pressed': String(trOn), 'aria-label': tlangName(RV.tlang) + 'に訳す', onclick: function () { translateMsg(m); } }, '🌐', h('span', { text: trOn ? 'もとに戻す' : '訳す' }))
+      : null;
+    const rxRow = h('div', { class: 'rx' }, chips, addBtn, trBtn);
     if (open) {
       rxRow.append(h('div', { class: 'picker', role: 'group', 'aria-label': 'リアクション' }, EMOJIS.map(function (e) {
         return h('button', { type: 'button', 'aria-label': e, onclick: function () { RV.pickerFor = null; react(m.id, e); } }, e);
       })));
     }
     body.append(rxRow);
+    if (tr && tr.lang === RV.tlang) {
+      body.append(h('div', { class: 'trans' + (tr.state === 'err' ? ' bad' : '') },
+        h('small', { text: tr.state === 'loading' ? tlangName(tr.lang) + 'に訳しています…' : tr.state === 'err' ? '' : tlangName(tr.lang) + 'に訳しました' }),
+        tr.state === 'done' ? h('div', { class: 'ttext', text: tr.text }) : null,
+        tr.state === 'err' ? h('div', { class: 'ttext', text: tr.text }) : null));
+    }
     return h('div', { class: 'msg' + (mine ? ' me' : '') + (cont ? ' cont' : '') },
       cont ? h('div', { class: 'slot' }) : stampEl(who.stamp.t, who.stamp.c, 40),
       body);
+  }
+
+  async function translateMsg(m) {
+    const cur = RV.trans[m.id];
+    if (cur && cur.lang === RV.tlang) { delete RV.trans[m.id]; RV.sig = ''; updateChat(); return; }
+    const lang = RV.tlang;
+    RV.trans[m.id] = { lang: lang, state: 'loading', text: '' };
+    RV.sig = ''; updateChat();
+    let res;
+    try {
+      const tok = await RV.user.getIdToken();
+      const r = await fetch(TRANSLATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+        body: JSON.stringify({ roomId: id, text: m.text, target: lang })
+      });
+      const j = await r.json().catch(function () { return {}; });
+      if (r.ok && j.text) res = { state: 'done', text: j.text };
+      else if (r.status === 403 || r.status === 401) res = { state: 'err', text: 'この部屋のメンバーとして確認できませんでした' };
+      else res = { state: 'err', text: '翻訳できませんでした。しばらくしてからもう一度お試しください' };
+    } catch (e) { res = { state: 'err', text: '通信できませんでした' }; }
+    if (RV.destroyed || !RV.trans[m.id] || RV.trans[m.id].lang !== lang) return;
+    RV.trans[m.id] = { lang: lang, state: res.state, text: res.text };
+    RV.sig = ''; updateChat();
+  }
+  function openTransLang() {
+    let sheet = null;
+    const list = h('div', { class: 'menu' }, TLANGS.map(function (x) {
+      return h('button', { type: 'button', 'aria-pressed': String(RV.tlang === x[0]), onclick: function () { RV.tlang = x[0]; saveTLang(x[0]); sheet.close(); RV.sig = ''; updateChat(); toast('翻訳先を ' + x[1] + ' にしました'); } }, (RV.tlang === x[0] ? '✓ ' : '') + x[1]);
+    }));
+    sheet = openSheet('翻訳先の言語', h('div', { class: 'copybox' }, h('p', { class: 'hint', text: 'メッセージの「訳す」を押すと、この言語に訳されます。元の言語は自動で判断します。押したメッセージの文章だけが、翻訳のためにGoogleのGeminiへ送られます。訳した結果は、あなたの画面にだけ出ます。' }), list));
   }
 
   async function react(msgId, emoji) {
@@ -1200,6 +1256,7 @@ function mountRoom(r) {
     const ns = notifyState();
     const menu = h('div', { class: 'menu' },
       item('名前とハンコを変える', 'この部屋での表示だけが変わります。', editIdentity),
+      TRANSLATE_URL ? item('翻訳先の言語：' + tlangName(RV.tlang), '「訳す」を押したときの言語です。', openTransLang) : null,
       item(ns.label, ns.sub, askNotify, '', ns.disabled),
       item('この部屋から出る', '名前とハンコを手放します。入り直すと新しい名前になります。', leave, 'danger'));
     sheet = openSheet('メニュー', menu);
