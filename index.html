@@ -204,6 +204,18 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .trans .ttext{white-space:pre-wrap;overflow-wrap:anywhere}
 .trans.bad .ttext{color:var(--bad);font-weight:700;font-size:14px}
 .menu button[aria-pressed="true"]{color:var(--accent-ink)}
+.chip.rp{color:var(--muted)}
+@media (hover:hover){.chip.rp{opacity:0}.msg:hover .chip.rp,.msg:focus-within .chip.rp{opacity:1}}
+.quote{display:flex;flex-direction:column;align-items:flex-start;gap:0;max-width:100%;text-align:left;padding:4px 10px;border:0;border-left:3px solid var(--accent);border-radius:6px;background:var(--surface-2);color:var(--muted);font-size:13px;cursor:pointer}
+.quote strong{font-size:12px;color:var(--ink)}
+.quote span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg.flash .bubble{animation:flash 1.6s}
+@keyframes flash{0%,60%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){.msg.flash .bubble{animation:none;outline:2px solid var(--accent)}}
+.replybar{flex:none;display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--surface);border-top:1px solid var(--line);border-left:3px solid var(--accent)}
+.replybar .grow{flex:1;min-width:0;display:flex;flex-direction:column;font-size:13px;color:var(--muted)}
+.replybar strong{color:var(--ink);font-size:13px}
+.replybar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -874,7 +886,7 @@ function mountRoom(r) {
   const RV = {
     mode: null, uid: null, room: null, members: {}, msgs: [],
     gotMembers: false, gotMsgs: false, seen: null, unread: 0,
-    pendingImg: null, pickerFor: null, user: null, trans: {}, tlang: loadTLang(), sending: false, forceBottom: false, newCount: 0, sig: '',
+    pendingImg: null, replyTo: null, pickerFor: null, user: null, trans: {}, tlang: loadTLang(), sending: false, forceBottom: false, newCount: 0, sig: '',
     unsubs: [], timers: [], destroyed: false, leaving: false
   };
   const els = {};
@@ -986,7 +998,7 @@ function mountRoom(r) {
       const list = [];
       s.forEach(function (d) {
         const x = d.data({ serverTimestamps: 'estimate' });
-        list.push({ id: d.id, uid: x.uid, text: x.text || '', img: x.img || null, ts: tsMs(x.createdAt) || Date.now(), rx: x.rx || {} });
+        list.push({ id: d.id, uid: x.uid, text: x.text || '', img: x.img || null, ts: tsMs(x.createdAt) || Date.now(), rx: x.rx || {}, reply: x.reply || null });
       });
       list.reverse();
       RV.msgs = list; RV.gotMsgs = true;
@@ -1019,6 +1031,7 @@ function mountRoom(r) {
     els.list.addEventListener('scroll', function () { if (nearBottom()) hidePill(); });
     els.pill = h('button', { class: 'newpill', type: 'button', hidden: true, onclick: function () { scrollBottom(); hidePill(); } });
     els.pending = h('div', { class: 'pending', hidden: true });
+    els.replybar = h('div', { class: 'replybar', hidden: true });
     els.ta = h('textarea', { id: 'msg-input', rows: '1', maxlength: '2000', 'aria-label': 'メッセージ', placeholder: 'メッセージを入力' });
     els.file = h('input', { type: 'file', accept: 'image/*', hidden: true, id: 'msg-file', 'aria-label': '画像を選ぶ' });
     els.imgBtn = h('button', { class: 'ibtn', type: 'button', 'aria-label': '画像を添付', onclick: function () { els.file.click(); } }, icon('image'));
@@ -1029,7 +1042,7 @@ function mountRoom(r) {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && window.matchMedia && matchMedia('(hover:hover)').matches) { e.preventDefault(); send(); }
     });
     els.file.addEventListener('change', onFile);
-    showPage([header, els.list, els.pill, els.pending, composer]);
+    showPage([header, els.list, els.pill, els.replybar, els.pending, composer]);
     setTitle();
   }
   function updateHeader() {
@@ -1113,6 +1126,11 @@ function mountRoom(r) {
     const who = mem || { name: '退室した人', stamp: { t: '？', c: 'ink' } };
     const body = h('div', { class: 'body' });
     if (!cont) body.append(h('div', { class: 'meta' }, h('span', { class: 'name', text: who.name }), h('time', { text: fmtTime(m.ts) })));
+    if (m.reply) {
+      const rm = RV.members[m.reply.uid];
+      body.append(h('button', { class: 'quote', type: 'button', 'aria-label': '返信元のメッセージへ移動', onclick: function () { jumpTo(m.reply.id); } },
+        h('strong', { text: (rm ? rm.name : '退室した人') }), h('span', { text: m.reply.t })));
+    }
     if (m.text) body.append(h('div', { class: 'bubble', text: m.text }));
     if (m.img) body.append(h('div', { class: 'bubble pic' },
       h('button', { class: 'picbtn', type: 'button', 'aria-label': '画像を拡大', onclick: function () { openLightbox(m.img.src); } },
@@ -1131,7 +1149,8 @@ function mountRoom(r) {
     const trBtn = (TRANSLATE_URL && m.text)
       ? h('button', { class: 'chip tr', type: 'button', 'aria-pressed': String(trOn), 'aria-label': tlangName(RV.tlang) + 'に訳す', onclick: function () { translateMsg(m); } }, '🌐', h('span', { text: trOn ? 'もとに戻す' : '訳す' }))
       : null;
-    const rxRow = h('div', { class: 'rx' }, chips, addBtn, trBtn);
+    const replyBtn = h('button', { class: 'chip rp', type: 'button', 'aria-label': 'このメッセージに返信', onclick: function () { startReply(m, who); } }, '↩', h('span', { text: '返信' }));
+    const rxRow = h('div', { class: 'rx' }, chips, addBtn, replyBtn, trBtn);
     if (open) {
       rxRow.append(h('div', { class: 'picker', role: 'group', 'aria-label': 'リアクション' }, EMOJIS.map(function (e) {
         return h('button', { type: 'button', 'aria-label': e, onclick: function () { RV.pickerFor = null; react(m.id, e); } }, e);
@@ -1144,7 +1163,7 @@ function mountRoom(r) {
         tr.state === 'done' ? h('div', { class: 'ttext', text: tr.text }) : null,
         tr.state === 'err' ? h('div', { class: 'ttext', text: tr.text }) : null));
     }
-    return h('div', { class: 'msg' + (mine ? ' me' : '') + (cont ? ' cont' : '') },
+    return h('div', { class: 'msg' + (mine ? ' me' : '') + (cont ? ' cont' : ''), 'data-mid': m.id },
       cont ? h('div', { class: 'slot' }) : stampEl(who.stamp.t, who.stamp.c, 40),
       body);
   }
@@ -1217,6 +1236,28 @@ function mountRoom(r) {
       toast('この形式の画像は読み込めませんでした。JPEGかPNGでお試しください');
     });
   }
+  function snippet(m) { return m.text ? clipChars(m.text.replace(/\s+/g, ' ').trim(), 60) : '📷 画像'; }
+  function startReply(m, who) {
+    RV.replyTo = { id: m.id, uid: m.uid, t: snippet(m) };
+    renderReplyBar();
+    els.ta.focus();
+  }
+  function renderReplyBar() {
+    const r = RV.replyTo;
+    if (!r) { els.replybar.hidden = true; els.replybar.replaceChildren(); return; }
+    const mem = RV.members[r.uid];
+    els.replybar.hidden = false;
+    els.replybar.replaceChildren(
+      h('div', { class: 'grow' }, h('strong', { text: (mem ? mem.name : '退室した人') + ' に返信' }), h('span', { text: r.t })),
+      h('button', { class: 'ibtn', type: 'button', 'aria-label': '返信をやめる', onclick: function () { RV.replyTo = null; renderReplyBar(); } }, icon('x')));
+  }
+  function jumpTo(mid) {
+    const el = els.list.querySelector('[data-mid="' + mid + '"]');
+    if (!el) { toast('元のメッセージは、もう見られません'); return; }
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('flash');
+    setTimeout(function () { el.classList.remove('flash'); }, 1600);
+  }
   async function send() {
     if (RV.sending) return;
     const text = els.ta.value.trim();
@@ -1224,11 +1265,13 @@ function mountRoom(r) {
     const img = RV.pendingImg;
     RV.sending = true; syncSend();
     try {
-      await addDoc(collection(db, 'rooms', id, 'messages'), {
+      const data = {
         uid: RV.uid, text: text, img: img ? { src: img.src, w: img.w, h: img.h } : null,
         createdAt: serverTimestamp(), rx: {}
-      });
-      els.ta.value = ''; RV.pendingImg = null; renderPending(); autosize(); RV.forceBottom = true;
+      };
+      if (RV.replyTo) data.reply = { id: RV.replyTo.id, uid: RV.replyTo.uid, t: RV.replyTo.t };
+      await addDoc(collection(db, 'rooms', id, 'messages'), data);
+      els.ta.value = ''; RV.replyTo = null; renderReplyBar(); RV.pendingImg = null; renderPending(); autosize(); RV.forceBottom = true;
     } catch (e) { toast(fbErr(e)); }
     RV.sending = false; syncSend(); els.ta.focus();
   }
