@@ -204,8 +204,10 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .trans .ttext{white-space:pre-wrap;overflow-wrap:anywhere}
 .trans.bad .ttext{color:var(--bad);font-weight:700;font-size:14px}
 .menu button[aria-pressed="true"]{color:var(--accent-ink)}
-.chip.rp{color:var(--muted)}
-@media (hover:hover){.chip.rp{opacity:0}.msg:hover .chip.rp,.msg:focus-within .chip.rp{opacity:1}}
+.chip.rp,.chip.del{color:var(--muted)}
+@media (hover:hover){.chip.rp,.chip.del{opacity:0}.msg:hover .chip.rp,.msg:focus-within .chip.rp,.msg:hover .chip.del,.msg:focus-within .chip.del{opacity:1}}
+.quote.static{cursor:default}
+.delprev{max-width:100%;max-height:200px;border-radius:10px;align-self:flex-start}
 .quote{display:flex;flex-direction:column;align-items:flex-start;gap:0;max-width:100%;text-align:left;padding:4px 10px;border:0;border-left:3px solid var(--accent);border-radius:6px;background:var(--surface-2);color:var(--muted);font-size:13px;cursor:pointer}
 .quote strong{font-size:12px;color:var(--ink)}
 .quote span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1150,7 +1152,8 @@ function mountRoom(r) {
       ? h('button', { class: 'chip tr', type: 'button', 'aria-pressed': String(trOn), 'aria-label': tlangName(RV.tlang) + 'に訳す', onclick: function () { translateMsg(m); } }, '🌐', h('span', { text: trOn ? 'もとに戻す' : '訳す' }))
       : null;
     const replyBtn = h('button', { class: 'chip rp', type: 'button', 'aria-label': 'このメッセージに返信', onclick: function () { startReply(m, who); } }, '↩', h('span', { text: '返信' }));
-    const rxRow = h('div', { class: 'rx' }, chips, addBtn, replyBtn, trBtn);
+    const delBtn = mine ? h('button', { class: 'chip del', type: 'button', 'aria-label': 'このメッセージを削除', onclick: function () { confirmDelete(m); } }, '🗑', h('span', { text: '削除' })) : null;
+    const rxRow = h('div', { class: 'rx' }, chips, addBtn, replyBtn, trBtn, delBtn);
     if (open) {
       rxRow.append(h('div', { class: 'picker', role: 'group', 'aria-label': 'リアクション' }, EMOJIS.map(function (e) {
         return h('button', { type: 'button', 'aria-label': e, onclick: function () { RV.pickerFor = null; react(m.id, e); } }, e);
@@ -1235,6 +1238,25 @@ function mountRoom(r) {
     prepareImage(f, IMG_KB).then(function (img) { RV.pendingImg = img; renderPending(); }, function () {
       toast('この形式の画像は読み込めませんでした。JPEGかPNGでお試しください');
     });
+  }
+  function confirmDelete(m) {
+    let sheet = null;
+    const err = h('div', { class: 'err', role: 'alert' });
+    const go = h('button', { class: 'btn danger solid', type: 'button', onclick: function () {
+      go.disabled = true; err.textContent = '';
+      deleteDoc(doc(db, 'rooms', id, 'messages', m.id)).then(function () {
+        sheet.close(); delete RV.trans[m.id];
+        if (RV.replyTo && RV.replyTo.id === m.id) { RV.replyTo = null; renderReplyBar(); }
+        toast('削除しました');
+      }, function (e) { err.textContent = fbErr(e); go.disabled = false; });
+    } }, '削除する');
+    sheet = openSheet('メッセージを削除', h('div', { class: 'copybox' },
+      h('p', { text: m.img && !m.text ? 'この画像を、部屋のみんなの画面から消します。元に戻せません。' : 'このメッセージ' + (m.img ? 'と画像' : '') + 'を、部屋のみんなの画面から消します。元に戻せません。' }),
+      m.text ? h('div', { class: 'quote static' }, h('span', { text: snippet(m) })) : null,
+      m.img ? h('img', { class: 'delprev', src: m.img.src, alt: '削除する画像' }) : null,
+      err,
+      h('div', { class: 'row' }, go, h('button', { class: 'btn', type: 'button', onclick: function () { sheet.close(); } }, 'やめる')),
+      h('p', { class: 'hint', text: '返信の引用に残っている冒頭の文章は、消えません。' })));
   }
   function snippet(m) { return m.text ? clipChars(m.text.replace(/\s+/g, ' ').trim(), 60) : '📷 画像'; }
   function startReply(m, who) {
