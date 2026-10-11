@@ -150,12 +150,14 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .chip{display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:14px;cursor:pointer}
 .chip .n{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
 .chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
-.chip.add{color:var(--muted);padding:0 8px}
+.chip.add{color:var(--muted);padding:0 10px}
+.chip.add.open{background:var(--accent-soft);border-color:var(--accent)}
+.rx.acts{gap:6px}
+.msg{cursor:pointer;border-radius:12px}
+.msg.sel .bubble{box-shadow:0 0 0 2px var(--accent)}
+.msg:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .chip.add svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round}
-@media (hover:hover){
-  .chip.add{opacity:0}
-  .msg:hover .chip.add,.msg:focus-within .chip.add,.chip.add.open{opacity:1}
-}
+
 .picker{display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow)}
 .picker button{width:38px;height:38px;border-radius:50%;border:0;background:none;font-size:20px;cursor:pointer}
 .picker button:hover{background:var(--surface-2)}
@@ -205,7 +207,6 @@ input[type=number]{font-variant-numeric:tabular-nums}
 .trans.bad .ttext{color:var(--bad);font-weight:700;font-size:14px}
 .menu button[aria-pressed="true"]{color:var(--accent-ink)}
 .chip.rp,.chip.del{color:var(--muted)}
-@media (hover:hover){.chip.rp,.chip.del{opacity:0}.msg:hover .chip.rp,.msg:focus-within .chip.rp,.msg:hover .chip.del,.msg:focus-within .chip.del{opacity:1}}
 .quote.static{cursor:default}
 .delprev{max-width:100%;max-height:200px;border-radius:10px;align-self:flex-start}
 .quote{display:flex;flex-direction:column;align-items:flex-start;gap:0;max-width:100%;text-align:left;padding:4px 10px;border:0;border-left:3px solid var(--accent);border-radius:6px;background:var(--surface-2);color:var(--muted);font-size:13px;cursor:pointer}
@@ -888,7 +889,7 @@ function mountRoom(r) {
   const RV = {
     mode: null, uid: null, room: null, members: {}, msgs: [],
     gotMembers: false, gotMsgs: false, seen: null, unread: 0,
-    pendingImg: null, replyTo: null, pickerFor: null, user: null, trans: {}, tlang: loadTLang(), sending: false, forceBottom: false, newCount: 0, sig: '',
+    pendingImg: null, replyTo: null, pickerFor: null, actionsFor: null, user: null, trans: {}, tlang: loadTLang(), sending: false, forceBottom: false, newCount: 0, sig: '',
     unsubs: [], timers: [], destroyed: false, leaving: false
   };
   const els = {};
@@ -1076,7 +1077,7 @@ function mountRoom(r) {
     }).join('|');
     const mem = Object.keys(RV.members).map(function (k) { const x = RV.members[k]; return k + x.name + x.stamp.t + x.stamp.c; }).join('|');
     const tr = Object.keys(RV.trans).map(function (k) { const t = RV.trans[k]; return k + t.lang + t.state; }).join(',');
-    return msgs + '#' + mem + '#' + RV.pickerFor + '#' + tr;
+    return msgs + '#' + mem + '#' + RV.pickerFor + '#' + RV.actionsFor + '#' + tr;
   }
   function updateChat() {
     if (RV.mode !== 'chat' || !RV.gotMembers || !RV.gotMsgs) return;
@@ -1144,31 +1145,55 @@ function mountRoom(r) {
       const on = tally[e].indexOf(me) >= 0;
       return h('button', { class: 'chip', type: 'button', 'aria-pressed': String(on), 'aria-label': e + ' ' + tally[e].length + '人', onclick: function () { react(m.id, e); } }, e, h('span', { class: 'n', text: tally[e].length }));
     });
-    const open = RV.pickerFor === m.id;
+    const sel = RV.actionsFor === m.id;
+    const open = sel && RV.pickerFor === m.id;
     const addBtn = h('button', { class: 'chip add' + (open ? ' open' : ''), type: 'button', 'aria-label': 'リアクションを選ぶ', 'aria-expanded': String(open), onclick: function () { RV.pickerFor = open ? null : m.id; RV.sig = ''; updateChat(); } }, icon('plus'));
     const tr = RV.trans[m.id];
     const trOn = !!(tr && tr.lang === RV.tlang);
     const trBtn = (TRANSLATE_URL && m.text)
-      ? h('button', { class: 'chip tr', type: 'button', 'aria-pressed': String(trOn), 'aria-label': tlangName(RV.tlang) + 'に訳す', onclick: function () { translateMsg(m); } }, '🌐', h('span', { text: trOn ? 'もとに戻す' : '訳す' }))
+      ? h('button', { class: 'chip tr', type: 'button', 'aria-pressed': String(trOn), 'aria-label': tlangName(RV.tlang) + 'に訳す', onclick: function () { RV.actionsFor = null; RV.pickerFor = null; translateMsg(m); } }, '🌐', h('span', { text: trOn ? 'もとに戻す' : '訳す' }))
       : null;
-    const replyBtn = h('button', { class: 'chip rp', type: 'button', 'aria-label': 'このメッセージに返信', onclick: function () { startReply(m, who); } }, '↩', h('span', { text: '返信' }));
-    const delBtn = mine ? h('button', { class: 'chip del', type: 'button', 'aria-label': 'このメッセージを削除', onclick: function () { confirmDelete(m); } }, '🗑', h('span', { text: '削除' })) : null;
-    const rxRow = h('div', { class: 'rx' }, chips, addBtn, replyBtn, trBtn, delBtn);
-    if (open) {
-      rxRow.append(h('div', { class: 'picker', role: 'group', 'aria-label': 'リアクション' }, EMOJIS.map(function (e) {
-        return h('button', { type: 'button', 'aria-label': e, onclick: function () { RV.pickerFor = null; react(m.id, e); } }, e);
-      })));
+    const replyBtn = h('button', { class: 'chip rp', type: 'button', 'aria-label': 'このメッセージに返信', onclick: function () { RV.actionsFor = null; RV.pickerFor = null; startReply(m, who); } }, '↩', h('span', { text: '返信' }));
+    const delBtn = mine ? h('button', { class: 'chip del', type: 'button', 'aria-label': 'このメッセージを削除', onclick: function () { RV.actionsFor = null; RV.pickerFor = null; RV.sig = ''; updateChat(); confirmDelete(m); } }, '🗑', h('span', { text: '削除' })) : null;
+    if (chips.length) body.append(h('div', { class: 'rx' }, chips));
+    if (sel) {
+      const acts = h('div', { class: 'rx acts' }, addBtn, replyBtn, trBtn, delBtn);
+      if (open) {
+        acts.append(h('div', { class: 'picker', role: 'group', 'aria-label': 'リアクション' }, EMOJIS.map(function (e) {
+          return h('button', { type: 'button', 'aria-label': e, onclick: function () { RV.pickerFor = null; RV.actionsFor = null; react(m.id, e); } }, e);
+        })));
+      }
+      body.append(acts);
     }
-    body.append(rxRow);
     if (tr && tr.lang === RV.tlang) {
       body.append(h('div', { class: 'trans' + (tr.state === 'err' ? ' bad' : '') },
         h('small', { text: tr.state === 'loading' ? tlangName(tr.lang) + 'に訳しています…' : tr.state === 'err' ? '' : tlangName(tr.lang) + 'に訳しました' }),
         tr.state === 'done' ? h('div', { class: 'ttext', text: tr.text }) : null,
         tr.state === 'err' ? h('div', { class: 'ttext', text: tr.text }) : null));
     }
-    return h('div', { class: 'msg' + (mine ? ' me' : '') + (cont ? ' cont' : ''), 'data-mid': m.id },
+    const row = h('div', { class: 'msg' + (mine ? ' me' : '') + (cont ? ' cont' : '') + (sel ? ' sel' : ''), 'data-mid': m.id, tabindex: '0', role: 'group', 'aria-label': 'メッセージ。Enterキーで、返信などの操作を表示します' },
       cont ? h('div', { class: 'slot' }) : stampEl(who.stamp.t, who.stamp.c, 40),
       body);
+    row.addEventListener('click', function (e) {
+      if (e.target.closest('button, a, input, textarea')) return;
+      const sl = window.getSelection && window.getSelection();
+      if (sl && String(sl).length) return;
+      toggleActions(m.id);
+    });
+    row.addEventListener('keydown', function (e) {
+      if (e.target === row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleActions(m.id); }
+    });
+    return row;
+  }
+
+  function toggleActions(mid) {
+    RV.actionsFor = RV.actionsFor === mid ? null : mid;
+    RV.pickerFor = null;
+    RV.sig = ''; updateChat();
+    if (RV.actionsFor) {
+      const el = els.list.querySelector('[data-mid="' + mid + '"]');
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
   }
 
   async function translateMsg(m) {
@@ -1205,7 +1230,7 @@ function mountRoom(r) {
   async function react(msgId, emoji) {
     const m = RV.msgs.find(function (x) { return x.id === msgId; });
     const mineOn = !!(m && (m.rx[RV.uid] || []).indexOf(emoji) >= 0);
-    RV.pickerFor = null;
+    RV.pickerFor = null; RV.actionsFor = null;
     try {
       const patch = {};
       patch['rx.' + RV.uid] = mineOn ? arrayRemove(emoji) : arrayUnion(emoji);
